@@ -23,3 +23,7 @@ voxd-git/voxd/
 *.tmp
 .DS_Store
 pkgbase/
+
+# Ignore .git directories in package folders (they're separate AUR repos)
+**/.git/
+**/.git
