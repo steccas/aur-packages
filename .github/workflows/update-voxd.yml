@@ -1,0 +1,146 @@
+name: Update VOXD Packages
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.AUR_SSH_KEY }}
+      
+      - name: Set up Git
+        run: |
+          git config --global user.name "Luca Steccanella"
+          git config --global user.email "steccas@pm.me"
+      
+      - name: Install dependencies
+        run: |
+          sudo pacman -Syu --noconfirm
+          sudo pacman -S --noconfirm base-devel git curl jq
+      
+      - name: Check for new voxd release
+        id: check_release
+        run: |
+          # Get latest release from GitHub
+          LATEST=$(curl -s https://api.github.com/repos/jakovius/voxd/releases/latest | jq -r .tag_name | sed 's/^v//')
+          CURRENT=$(grep '^pkgver=' voxd/PKGBUILD | cut -d'=' -f2)
+          
+          echo "Latest version: $LATEST"
+          echo "Current version: $CURRENT"
+          
+          if [ "$LATEST" != "$CURRENT" ]; then
+            echo "new_version=$LATEST" >> $GITHUB_OUTPUT
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+          else
+            echo "update_needed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update voxd package
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          NEW_VERSION="${{ steps.check_release.outputs.new_version }}"
+          
+          # Update voxd
+          cd voxd
+          sed -i "s/^pkgver=.*/pkgver=$NEW_VERSION/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          updpkgsums
+          makepkg --printsrcinfo > .SRCINFO
+          cd ..
+          
+          # Update voxd-bin
+          cd voxd-bin
+          sed -i "s/^pkgver=.*/pkgver=$NEW_VERSION/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          
+          # Download and calculate SHA256 sums for both architectures
+          X86_URL="https://github.com/jakovius/voxd/releases/download/v${NEW_VERSION}/voxd-${NEW_VERSION}-1-x86_64.pkg.tar.zst"
+          ARM_URL="https://github.com/jakovius/voxd/releases/download/v${NEW_VERSION}/voxd-${NEW_VERSION}-1-aarch64.pkg.tar.zst"
+          
+          # Download and get checksums
+          X86_SHA=$(curl -sL "$X86_URL" | sha256sum | cut -d' ' -f1)
+          ARM_SHA=$(curl -sL "$ARM_URL" | sha256sum | cut -d' ' -f1)
+          
+          # Update PKGBUILD with real checksums
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$X86_SHA')/" PKGBUILD
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('$ARM_SHA')/" PKGBUILD
+          
+          makepkg --printsrcinfo > .SRCINFO
+          cd ..
+      
+      - name: Commit and push to GitHub
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          NEW_VERSION="${{ steps.check_release.outputs.new_version }}"
+          git add voxd/PKGBUILD voxd/.SRCINFO voxd-bin/PKGBUILD voxd-bin/.SRCINFO
+          git commit -m "Update voxd packages to version $NEW_VERSION"
+          git push origin main
+      
+      - name: Push to AUR - voxd
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          NEW_VERSION="${{ steps.check_release.outputs.new_version }}"
+          
+          # Setup SSH for AUR
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          
+          # Clone AUR repo
+          cd /tmp
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git clone ssh://aur@aur.archlinux.org/voxd.git aur-voxd
+          
+          # Copy updated files
+          cp $GITHUB_WORKSPACE/voxd/PKGBUILD aur-voxd/
+          cp $GITHUB_WORKSPACE/voxd/.SRCINFO aur-voxd/
+          
+          # Commit and push to AUR
+          cd aur-voxd
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to version $NEW_VERSION"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push origin master
+      
+      - name: Push to AUR - voxd-bin
+        if: steps.check_release.outputs.update_needed == 'true'
+        run: |
+          NEW_VERSION="${{ steps.check_release.outputs.new_version }}"
+          
+          # Clone AUR repo
+          cd /tmp
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git clone ssh://aur@aur.archlinux.org/voxd-bin.git aur-voxd-bin
+          
+          # Copy updated files
+          cp $GITHUB_WORKSPACE/voxd-bin/PKGBUILD aur-voxd-bin/
+          cp $GITHUB_WORKSPACE/voxd-bin/.SRCINFO aur-voxd-bin/
+          
+          # Commit and push to AUR
+          cd aur-voxd-bin
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to version $NEW_VERSION"
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/aur" git push origin master
+      
+      - name: Create GitHub Release
+        if: steps.check_release.outputs.update_needed == 'true'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: voxd-${{ steps.check_release.outputs.new_version }}
+          release_name: VOXD ${{ steps.check_release.outputs.new_version }}
+          body: |
+            Automated update of voxd AUR packages to version ${{ steps.check_release.outputs.new_version }}
+            
+            Updated packages:
+            - voxd
+            - voxd-bin
+          draft: false
+          prerelease: false

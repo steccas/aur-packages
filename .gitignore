@@ -1,0 +1,25 @@
+# Build artifacts
+*.tar.gz
+*.tar.xz
+*.tar.zst
+pkg/
+src/
+*.pkg.tar.*
+*.log
+
+# Editor files
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Package-specific ignores
+voxd/voxd-*.tar.gz
+voxd-bin/voxd-*.pkg.tar.zst
+voxd-git/voxd/
+
+# Temporary files
+*.tmp
+.DS_Store
+pkgbase/
