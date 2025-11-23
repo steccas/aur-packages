@@ -9,8 +9,15 @@ on:
 jobs:
   check-and-update:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
     
     steps:
+      - name: Install base dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git curl jq openssh
+      
       - name: Checkout repository
         uses: actions/checkout@v4
       
@@ -18,11 +25,7 @@ jobs:
         run: |
           git config --global user.name "Luca Steccanella"
           git config --global user.email "steccas@pm.me"
-      
-      - name: Install dependencies
-        run: |
-          sudo pacman -Syu --noconfirm
-          sudo pacman -S --noconfirm base-devel git curl jq
+          git config --global --add safe.directory /__w/aur-packages/aur-packages
       
       - name: Check for new voxd release
         id: check_release
