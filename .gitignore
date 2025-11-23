@@ -14,16 +14,14 @@ src/
 .vscode/
 .idea/
 
-# Package-specific ignores
-voxd/voxd-*.tar.gz
-voxd-bin/voxd-*.pkg.tar.zst
-voxd-git/voxd/
-
 # Temporary files
 *.tmp
 .DS_Store
-pkgbase/
 
-# Ignore .git directories in package folders (they're separate AUR repos)
-**/.git/
-**/.git
+# AUR package directories (separate repos, cloned by workflow)
+voxd/
+voxd-bin/
+voxd-git/
+windsurf-features/
+windsurf-marketplace/
+pkgbase/
